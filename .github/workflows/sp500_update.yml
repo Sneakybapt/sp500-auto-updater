@@ -1,0 +1,37 @@
+name: 📊 SP500 Daily Update
+
+on:
+  schedule:
+    # Exécution du lundi au vendredi à 15h30 UTC (10h30 EST - après ouverture des marchés US)
+    - cron: '30 15 * * 1-5'
+  
+  # Permet l'exécution manuelle depuis GitHub
+  workflow_dispatch:
+
+jobs:
+  update-sp500:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas yfinance google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2
+        
+    - name: 🚀 Run SP500 updater
+      env:
+        GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      run: |
+        python sp500_updater.py
+        
+    - name: 📝 Log completion
+      run: |
+        echo "✅ SP500 update completed at $(date)"
