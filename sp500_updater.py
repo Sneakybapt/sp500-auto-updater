@@ -52,6 +52,13 @@ class SP500GoogleDriveUpdater:
     def get_or_create_folder(self):
         """Trouve ou crée le dossier SP500_Data dans Google Drive"""
         try:
+            # Utiliser un dossier spécifique si l'ID est fourni en variable d'environnement
+            folder_id_env = os.environ.get('GOOGLE_DRIVE_FOLDER_ID')
+            if folder_id_env:
+                self.folder_id = folder_id_env
+                logging.info(f"📁 Utilisation du dossier spécifié : {self.folder_id}")
+                return True
+            
             # Chercher le dossier existant
             results = self.service.files().list(
                 q=f"name='{self.folder_name}' and mimeType='application/vnd.google-apps.folder'",
@@ -71,7 +78,18 @@ class SP500GoogleDriveUpdater:
                 }
                 folder = self.service.files().create(body=folder_metadata, fields='id').execute()
                 self.folder_id = folder.get('id')
-                logging.info(f"📁 Dossier '{self.folder_name}' créé : {self.folder_id}")
+                
+                # Partager le dossier publiquement pour contourner le problème de quota
+                permission = {
+                    'type': 'anyone',
+                    'role': 'reader'
+                }
+                self.service.permissions().create(
+                    fileId=self.folder_id,
+                    body=permission
+                ).execute()
+                
+                logging.info(f"📁 Dossier '{self.folder_name}' créé et partagé : {self.folder_id}")
             
             return True
             
@@ -154,7 +172,18 @@ class SP500GoogleDriveUpdater:
                     media_body=media,
                     fields='id'
                 ).execute()
-                logging.info(f"📤 Nouveau CSV créé sur Google Drive : {new_file.get('id')}")
+                
+                # Partager le fichier publiquement
+                permission = {
+                    'type': 'anyone',
+                    'role': 'reader'
+                }
+                self.service.permissions().create(
+                    fileId=new_file.get('id'),
+                    body=permission
+                ).execute()
+                
+                logging.info(f"📤 Nouveau CSV créé et partagé sur Google Drive : {new_file.get('id')}")
             
             # Nettoyer le fichier temporaire
             os.remove(self.csv_filename)
