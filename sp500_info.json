@@ -1,0 +1,9 @@
+{
+  "file_name": "sp500_data.csv",
+  "last_updated": "2025-07-24T18:11:07.909605",
+  "total_records": 1,
+  "latest_date": "2025-07-24",
+  "latest_price": 6368.6,
+  "github_raw_url": "https://raw.githubusercontent.com/Sneakybapt/sp500-auto-updater/main/sp500_data.csv",
+  "description": "S&P 500 opening prices updated daily"
+}
