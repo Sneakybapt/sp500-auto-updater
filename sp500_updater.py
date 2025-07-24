@@ -19,30 +19,12 @@ class SP500GitHubUpdater:
         self.symbol = '^GSPC'  # Symbole Yahoo Finance pour S&P 500
         
     def load_existing_csv(self):
-        """Charge le CSV existant depuis le système de fichiers avec nettoyage du format français"""
+        """Charge le CSV existant depuis le système de fichiers"""
         try:
             if Path(self.csv_filename).exists():
                 df = pd.read_csv(self.csv_filename)
-                
-                # Nettoyer la colonne Opening_Price (format français avec €, espaces, virgules)
-                if 'Opening_Price' in df.columns:
-                    df['Opening_Price'] = df['Opening_Price'].astype(str)
-                    # Supprimer €, guillemets, espaces
-                    df['Opening_Price'] = df['Opening_Price'].str.replace('€', '')
-                    df['Opening_Price'] = df['Opening_Price'].str.replace('"', '')
-                    df['Opening_Price'] = df['Opening_Price'].str.replace(' ', '')
-                    # Remplacer virgule par point pour les décimales
-                    df['Opening_Price'] = df['Opening_Price'].str.replace(',', '.')
-                    # Convertir en float
-                    df['Opening_Price'] = pd.to_numeric(df['Opening_Price'], errors='coerce')
-                
-                # Convertir les dates (format DD/MM/YYYY)
-                df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y', errors='coerce').dt.date
-                
-                # Supprimer les lignes avec des erreurs de conversion
-                df = df.dropna()
-                
-                logging.info(f"📥 CSV existant chargé et nettoyé : {len(df)} lignes")
+                df['Date'] = pd.to_datetime(df['Date']).dt.date
+                logging.info(f"📥 CSV existant chargé : {len(df)} lignes")
                 return df
             else:
                 logging.info("📄 Aucun CSV existant, création d'un nouveau")
@@ -52,20 +34,18 @@ class SP500GitHubUpdater:
             return pd.DataFrame(columns=['Date', 'Opening_Price'])
     
     def save_csv(self, df):
-        """Sauvegarde le DataFrame en CSV avec formatage propre"""
+        """Sauvegarde le DataFrame en CSV avec formatage pour Google Sheets"""
         try:
-            # Créer une copie pour le formatage
-            df_save = df.copy()
+            # Convertir les dates au format français pour Google Sheets
+            df_formatted = df.copy()
+            df_formatted['Date'] = pd.to_datetime(df_formatted['Date']).dt.strftime('%d/%m/%Y')
             
-            # Formater les dates au format DD/MM/YYYY
-            df_save['Date'] = pd.to_datetime(df_save['Date']).dt.strftime('%d/%m/%Y')
+            # S'assurer que les prix sont des nombres avec 2 décimales
+            df_formatted['Opening_Price'] = df_formatted['Opening_Price'].round(2)
             
-            # Formater les prix : 2 décimales, pas de symbole €
-            df_save['Opening_Price'] = df_save['Opening_Price'].round(2)
-            
-            # Sauvegarder en format standard (virgule séparateur, point décimal)
-            df_save.to_csv(self.csv_filename, index=False)
-            logging.info(f"💾 CSV sauvegardé (format propre) : {len(df)} lignes")
+            # Sauvegarder avec séparateur point-virgule pour Google Sheets FR
+            df_formatted.to_csv(self.csv_filename, index=False, sep=';', decimal=',')
+            logging.info(f"💾 CSV sauvegardé (format FR) : {len(df)} lignes")
             return True
         except Exception as e:
             logging.error(f"❌ Erreur sauvegarde CSV : {e}")
