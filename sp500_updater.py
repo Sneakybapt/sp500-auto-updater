@@ -34,10 +34,18 @@ class SP500GitHubUpdater:
             return pd.DataFrame(columns=['Date', 'Opening_Price'])
     
     def save_csv(self, df):
-        """Sauvegarde le DataFrame en CSV"""
+        """Sauvegarde le DataFrame en CSV avec formatage pour Google Sheets"""
         try:
-            df.to_csv(self.csv_filename, index=False)
-            logging.info(f"💾 CSV sauvegardé : {len(df)} lignes")
+            # Convertir les dates au format français pour Google Sheets
+            df_formatted = df.copy()
+            df_formatted['Date'] = pd.to_datetime(df_formatted['Date']).dt.strftime('%d/%m/%Y')
+            
+            # S'assurer que les prix sont des nombres avec 2 décimales
+            df_formatted['Opening_Price'] = df_formatted['Opening_Price'].round(2)
+            
+            # Sauvegarder avec séparateur point-virgule pour Google Sheets FR
+            df_formatted.to_csv(self.csv_filename, index=False, sep=';', decimal=',')
+            logging.info(f"💾 CSV sauvegardé (format FR) : {len(df)} lignes")
             return True
         except Exception as e:
             logging.error(f"❌ Erreur sauvegarde CSV : {e}")
