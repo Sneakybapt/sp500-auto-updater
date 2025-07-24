@@ -24,14 +24,23 @@ jobs:
     - name: 📦 Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pandas yfinance google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2
+        pip install pandas yfinance requests
         
     - name: 🚀 Run SP500 updater
       env:
-        GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+        WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
       run: |
         python sp500_updater.py
+        
+    - name: 📤 Commit and push changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add sp500_data.csv sp500_info.json
+        git diff --staged --quiet || git commit -m "📊 Update SP500 data - $(date)"
+        git push
         
     - name: 📝 Log completion
       run: |
         echo "✅ SP500 update completed at $(date)"
+        echo "📊 Data accessible at: https://raw.githubusercontent.com/${{ github.repository }}/main/sp500_data.csv"
