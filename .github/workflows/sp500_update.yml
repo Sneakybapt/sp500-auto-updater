@@ -1,13 +1,11 @@
 name: 📊 SP500 Daily Update
-
 on:
   schedule:
-    # Exécution du lundi au vendredi à 15h30 UTC (10h30 EST - après ouverture des marchés US)
-    - cron: '30 15 * * 1-5'
+    # Exécution tous les jours à 15h30 UTC (10h30 EST - après ouverture des marchés US)
+    - cron: '30 15 * * *'
   
   # Permet l'exécution manuelle depuis GitHub
   workflow_dispatch:
-
 jobs:
   update-sp500:
     runs-on: ubuntu-latest
