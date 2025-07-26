@@ -27,37 +27,59 @@ class SP500GitHubUpdater:
                 # Essayer de lire avec différents formats
                 df = None
                 
-                # Essai 1: Format français actuel (sep=';', decimal=',')
+                # Essai 1: Format standard (sep=',', decimal='.')
                 try:
-                    df = pd.read_csv(self.csv_filename, sep=';', decimal=',')
-                    logging.info("✅ CSV lu avec format français (sep=';')")
-                except:
-                    logging.info("⚠️ Échec lecture format français")
+                    df = pd.read_csv(self.csv_filename, sep=',', decimal='.')
+                    logging.info("✅ CSV lu avec format standard (sep=',')")
+                except Exception as e:
+                    logging.info(f"⚠️ Échec lecture format standard: {e}")
                 
-                # Essai 2: Format standard (sep=',', decimal='.')
+                # Essai 2: Format français (sep=';', decimal=',')
                 if df is None:
                     try:
-                        df = pd.read_csv(self.csv_filename, sep=',', decimal='.')
-                        logging.info("✅ CSV lu avec format standard (sep=',')")
-                    except:
-                        logging.info("⚠️ Échec lecture format standard")
+                        df = pd.read_csv(self.csv_filename, sep=';', decimal=',')
+                        logging.info("✅ CSV lu avec format français (sep=';')")
+                    except Exception as e:
+                        logging.info(f"⚠️ Échec lecture format français: {e}")
                 
                 if df is not None and not df.empty:
                     logging.info(f"📊 Colonnes trouvées: {list(df.columns)}")
+                    
+                    # Vérifier si les colonnes sont correctes
+                    if len(df.columns) == 1 and ',' in df.columns[0]:
+                        # Le CSV a probablement été mal lu, essayer de le corriger
+                        logging.warning("⚠️ Colonnes mal séparées, tentative de correction...")
+                        col_name = df.columns[0]
+                        if 'Date' in col_name and 'Opening_Price' in col_name:
+                            # Essayer de lire à nouveau en spécifiant les noms de colonnes
+                            df = pd.read_csv(self.csv_filename, sep=',', names=['Date', 'Opening_Price'], skiprows=1)
+                            logging.info("✅ CSV corrigé avec noms de colonnes explicites")
+                    
+                    logging.info(f"📊 Colonnes finales: {list(df.columns)}")
                     logging.info(f"📊 Premières lignes:\n{df.head()}")
                     
                     # Gérer les différents formats de date
                     if 'Date' in df.columns:
                         # Essayer différents formats de date
                         try:
+                            # Essayer format français d/m/Y
                             df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y', errors='coerce').dt.date
-                            logging.info("✅ Dates converties format français")
+                            logging.info("✅ Dates converties format français (d/m/Y)")
                         except:
                             try:
-                                df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
-                                logging.info("✅ Dates converties format automatique")
-                            except Exception as date_error:
-                                logging.error(f"❌ Erreur conversion dates: {date_error}")
+                                # Essayer format américain Y-m-d
+                                df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d', errors='coerce').dt.date
+                                logging.info("✅ Dates converties format américain (Y-m-d)")
+                            except:
+                                try:
+                                    # Essayer conversion automatique
+                                    df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
+                                    logging.info("✅ Dates converties format automatique")
+                                except Exception as date_error:
+                                    logging.error(f"❌ Erreur conversion dates: {date_error}")
+                    
+                    # Nettoyer les valeurs NaN
+                    df = df.dropna()
                     
                     # Vérifier la dernière date
                     if not df.empty and 'Date' in df.columns:
