@@ -22,8 +22,10 @@ class SP500GitHubUpdater:
         """Charge le CSV existant depuis le système de fichiers"""
         try:
             if Path(self.csv_filename).exists():
-                df = pd.read_csv(self.csv_filename)
-                df['Date'] = pd.to_datetime(df['Date']).dt.date
+                df = pd.read_csv(self.csv_filename, sep=';', decimal=',')
+                # Gérer les différents formats de date
+                if 'Date' in df.columns:
+                    df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y', errors='coerce').dt.date
                 logging.info(f"📥 CSV existant chargé : {len(df)} lignes")
                 return df
             else:
@@ -51,8 +53,34 @@ class SP500GitHubUpdater:
             logging.error(f"❌ Erreur sauvegarde CSV : {e}")
             return False
     
+    def get_sp500_data_range(self, start_date, end_date):
+        """Récupère les données S&P 500 pour une plage de dates"""
+        try:
+            ticker = yf.Ticker(self.symbol)
+            hist = ticker.history(start=start_date, end=end_date)
+            
+            if hist.empty:
+                logging.warning(f"⚠️ Aucune donnée pour la période {start_date} à {end_date}")
+                return None
+                
+            # Convertir en DataFrame avec les colonnes nécessaires
+            data = []
+            for date, row in hist.iterrows():
+                data.append({
+                    'Date': date.date(),
+                    'Opening_Price': round(row['Open'], 2)
+                })
+            
+            df = pd.DataFrame(data)
+            logging.info(f"💰 {len(df)} cours récupérés pour la période")
+            return df
+            
+        except Exception as e:
+            logging.error(f"❌ Erreur récupération cours : {e}")
+            return None
+    
     def get_sp500_opening_price(self, date):
-        """Récupère le cours d'ouverture du S&P 500"""
+        """Récupère le cours d'ouverture du S&P 500 pour une date spécifique"""
         try:
             end_date = date + timedelta(days=1)
             ticker = yf.Ticker(self.symbol)
@@ -75,10 +103,31 @@ class SP500GitHubUpdater:
         return date.weekday() < 5  # 0-4 = lundi-vendredi
     
     def get_last_trading_date(self, date):
-        """Trouve la dernière date de trading"""
+        """Trouve la dernière date de trading avant ou égale à la date donnée"""
         while not self.is_trading_day(date):
             date = date - timedelta(days=1)
+            logging.info(f"🔄 {date} n'est pas un jour de trading, recherche du jour précédent...")
         return date
+    
+    def get_latest_available_data(self):
+        """Récupère les données les plus récentes disponibles"""
+        try:
+            # Essayer les 10 derniers jours pour être sûr d'avoir des données
+            end_date = datetime.now().date() + timedelta(days=1)
+            start_date = end_date - timedelta(days=10)
+            
+            data = self.get_sp500_data_range(start_date, end_date)
+            if data is not None and not data.empty:
+                # Retourner la date la plus récente
+                latest_data = data.iloc[-1]
+                logging.info(f"📊 Dernière donnée disponible : {latest_data['Date']} - ${latest_data['Opening_Price']}")
+                return latest_data['Date'], latest_data['Opening_Price']
+            
+            return None, None
+            
+        except Exception as e:
+            logging.error(f"❌ Erreur récupération dernières données : {e}")
+            return None, None
     
     def send_to_webhook(self, df):
         """Envoie les données à un webhook pour synchronisation (optionnel)"""
@@ -120,7 +169,8 @@ class SP500GitHubUpdater:
                 'latest_date': df['Date'].iloc[-1].isoformat() if not df.empty else None,
                 'latest_price': float(df['Opening_Price'].iloc[-1]) if not df.empty else None,
                 'github_raw_url': f"https://raw.githubusercontent.com/{os.environ.get('GITHUB_REPOSITORY', 'user/repo')}/main/{self.csv_filename}",
-                'description': "S&P 500 opening prices updated daily"
+                'description': "S&P 500 opening prices updated daily",
+                'note': "Data includes weekends using last trading day values"
             }
             
             with open('sp500_info.json', 'w') as f:
@@ -141,29 +191,38 @@ class SP500GitHubUpdater:
             # 1. Charger les données existantes
             df = self.load_existing_csv()
             
-            # 2. Déterminer la date cible
+            # 2. Déterminer la date d'aujourd'hui
             today = datetime.now().date()
-            target_date = self.get_last_trading_date(today)
             
-            # 3. Vérifier si on a déjà cette date
-            if not df.empty and target_date in df['Date'].values:
-                logging.info(f"📅 Données pour {target_date} déjà présentes")
+            # 3. Vérifier si on a déjà des données pour aujourd'hui
+            if not df.empty and today in df['Date'].values:
+                logging.info(f"📅 Données pour {today} déjà présentes")
                 return True
             
-            # 4. Récupérer le nouveau cours
-            opening_price = self.get_sp500_opening_price(target_date)
-            if opening_price is None:
-                return False
+            # 4. Récupérer les dernières données disponibles
+            latest_date, latest_price = self.get_latest_available_data()
             
-            # 5. Ajouter la nouvelle donnée
+            if latest_date is None or latest_price is None:
+                # Si aucune donnée récente n'est disponible, utiliser les dernières données du CSV
+                if not df.empty:
+                    latest_date = df['Date'].iloc[-1]
+                    latest_price = df['Opening_Price'].iloc[-1]
+                    logging.info(f"🔄 Utilisation des dernières données du CSV : {latest_date} - ${latest_price}")
+                else:
+                    logging.error("❌ Aucune donnée disponible")
+                    return False
+            
+            # 5. Ajouter la nouvelle donnée pour aujourd'hui
             new_row = pd.DataFrame({
-                'Date': [target_date],
-                'Opening_Price': [opening_price]
+                'Date': [today],
+                'Opening_Price': [latest_price]
             })
             
             if df.empty:
                 df = new_row
             else:
+                # Supprimer la ligne d'aujourd'hui si elle existe déjà, puis ajouter la nouvelle
+                df = df[df['Date'] != today]
                 df = pd.concat([df, new_row], ignore_index=True)
             
             df = df.sort_values('Date').drop_duplicates(subset=['Date'], keep='last')
@@ -178,7 +237,8 @@ class SP500GitHubUpdater:
             # 8. Envoyer au webhook si configuré
             self.send_to_webhook(df)
             
-            logging.info(f"✅ Mise à jour terminée : {target_date} - ${opening_price}")
+            trading_status = "📈 Jour de trading" if self.is_trading_day(today) else "📅 Weekend/Jour férié (dernière valeur utilisée)"
+            logging.info(f"✅ Mise à jour terminée : {today} - ${latest_price} ({trading_status})")
             return True
             
         except Exception as e:
