@@ -22,15 +22,58 @@ class SP500GitHubUpdater:
         """Charge le CSV existant depuis le système de fichiers"""
         try:
             if Path(self.csv_filename).exists():
-                df = pd.read_csv(self.csv_filename, sep=';', decimal=',')
-                # Gérer les différents formats de date
-                if 'Date' in df.columns:
-                    df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y', errors='coerce').dt.date
-                logging.info(f"📥 CSV existant chargé : {len(df)} lignes")
-                return df
+                logging.info(f"📁 Fichier {self.csv_filename} trouvé")
+                
+                # Essayer de lire avec différents formats
+                df = None
+                
+                # Essai 1: Format français actuel (sep=';', decimal=',')
+                try:
+                    df = pd.read_csv(self.csv_filename, sep=';', decimal=',')
+                    logging.info("✅ CSV lu avec format français (sep=';')")
+                except:
+                    logging.info("⚠️ Échec lecture format français")
+                
+                # Essai 2: Format standard (sep=',', decimal='.')
+                if df is None:
+                    try:
+                        df = pd.read_csv(self.csv_filename, sep=',', decimal='.')
+                        logging.info("✅ CSV lu avec format standard (sep=',')")
+                    except:
+                        logging.info("⚠️ Échec lecture format standard")
+                
+                if df is not None and not df.empty:
+                    logging.info(f"📊 Colonnes trouvées: {list(df.columns)}")
+                    logging.info(f"📊 Premières lignes:\n{df.head()}")
+                    
+                    # Gérer les différents formats de date
+                    if 'Date' in df.columns:
+                        # Essayer différents formats de date
+                        try:
+                            df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y', errors='coerce').dt.date
+                            logging.info("✅ Dates converties format français")
+                        except:
+                            try:
+                                df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
+                                logging.info("✅ Dates converties format automatique")
+                            except Exception as date_error:
+                                logging.error(f"❌ Erreur conversion dates: {date_error}")
+                    
+                    # Vérifier la dernière date
+                    if not df.empty and 'Date' in df.columns:
+                        last_date = df['Date'].max()
+                        logging.info(f"📅 Dernière date dans le CSV: {last_date}")
+                    
+                    logging.info(f"📥 CSV existant chargé : {len(df)} lignes")
+                    return df
+                else:
+                    logging.warning("⚠️ Fichier CSV vide ou non lisible")
+                    
             else:
                 logging.info("📄 Aucun CSV existant, création d'un nouveau")
-                return pd.DataFrame(columns=['Date', 'Opening_Price'])
+            
+            return pd.DataFrame(columns=['Date', 'Opening_Price'])
+            
         except Exception as e:
             logging.error(f"❌ Erreur chargement CSV : {e}")
             return pd.DataFrame(columns=['Date', 'Opening_Price'])
@@ -187,24 +230,28 @@ class SP500GitHubUpdater:
         """Fonction principale de mise à jour"""
         try:
             logging.info("🚀 Début de la mise à jour S&P 500")
+            logging.info(f"📅 Date d'aujourd'hui: {datetime.now().date()}")
             
             # 1. Charger les données existantes
             df = self.load_existing_csv()
+            logging.info(f"📊 DataFrame chargé - Shape: {df.shape}")
             
             # 2. Déterminer la date d'aujourd'hui
             today = datetime.now().date()
             
             # 3. Vérifier si on a déjà des données pour aujourd'hui
-            if not df.empty and today in df['Date'].values:
-                logging.info(f"📅 Données pour {today} déjà présentes")
-                return True
+            if not df.empty and 'Date' in df.columns and today in df['Date'].values:
+                logging.info(f"📅 Données pour {today} déjà présentes - Arrêt")
+                # Mais on continue quand même pour forcer la mise à jour si nécessaire
+                # return True
             
             # 4. Récupérer les dernières données disponibles
+            logging.info("🔍 Récupération des dernières données...")
             latest_date, latest_price = self.get_latest_available_data()
             
             if latest_date is None or latest_price is None:
                 # Si aucune donnée récente n'est disponible, utiliser les dernières données du CSV
-                if not df.empty:
+                if not df.empty and 'Opening_Price' in df.columns:
                     latest_date = df['Date'].iloc[-1]
                     latest_price = df['Opening_Price'].iloc[-1]
                     logging.info(f"🔄 Utilisation des dernières données du CSV : {latest_date} - ${latest_price}")
@@ -212,22 +259,36 @@ class SP500GitHubUpdater:
                     logging.error("❌ Aucune donnée disponible")
                     return False
             
+            logging.info(f"💰 Dernière donnée récupérée: {latest_date} - ${latest_price}")
+            
             # 5. Ajouter la nouvelle donnée pour aujourd'hui
             new_row = pd.DataFrame({
                 'Date': [today],
                 'Opening_Price': [latest_price]
             })
             
+            logging.info(f"📝 Nouvelle ligne à ajouter: {today} - ${latest_price}")
+            
             if df.empty:
                 df = new_row
+                logging.info("📄 CSV vide, création avec la nouvelle ligne")
             else:
                 # Supprimer la ligne d'aujourd'hui si elle existe déjà, puis ajouter la nouvelle
+                initial_len = len(df)
                 df = df[df['Date'] != today]
+                if len(df) < initial_len:
+                    logging.info(f"🔄 Suppression de l'ancienne entrée pour {today}")
+                
                 df = pd.concat([df, new_row], ignore_index=True)
+                logging.info(f"➕ Ligne ajoutée, nouveau total: {len(df)} lignes")
             
             df = df.sort_values('Date').drop_duplicates(subset=['Date'], keep='last')
             
+            logging.info(f"📊 DataFrame final - Shape: {df.shape}")
+            logging.info(f"📊 Dernières lignes:\n{df.tail()}")
+            
             # 6. Sauvegarder localement
+            logging.info("💾 Sauvegarde du CSV...")
             if not self.save_csv(df):
                 return False
             
@@ -243,6 +304,8 @@ class SP500GitHubUpdater:
             
         except Exception as e:
             logging.error(f"❌ Erreur générale : {e}")
+            import traceback
+            logging.error(f"❌ Traceback complet: {traceback.format_exc()}")
             return False
 
 def main():
