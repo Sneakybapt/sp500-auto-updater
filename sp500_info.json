@@ -1,7 +1,7 @@
 {
   "file_name": "sp500_data.csv",
-  "last_updated": "2025-07-26T19:52:40.528312",
-  "total_records": 19141,
+  "last_updated": "2025-07-26T19:57:58.743210",
+  "total_records": 1,
   "latest_date": "2025-07-26",
   "latest_price": 6370.01,
   "github_raw_url": "https://raw.githubusercontent.com/Sneakybapt/sp500-auto-updater/main/sp500_data.csv",
