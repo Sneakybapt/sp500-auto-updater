@@ -46,16 +46,29 @@ class SP500GitHubUpdater:
                     logging.info(f"📊 Colonnes trouvées: {list(df.columns)}")
                     
                     # Vérifier si les colonnes sont correctes
-                    if len(df.columns) == 1 and ',' in df.columns[0]:
-                        # Le CSV a probablement été mal lu, essayer de le corriger
-                        logging.warning("⚠️ Colonnes mal séparées, tentative de correction...")
+                    if len(df.columns) == 1:
                         col_name = df.columns[0]
-                        if 'Date' in col_name and 'Opening_Price' in col_name:
-                            # Essayer de lire à nouveau en spécifiant les noms de colonnes
+                        if ';' in col_name and 'Date' in col_name and 'Opening_Price' in col_name:
+                            # Le CSV utilise des point-virgules dans les noms de colonnes
+                            logging.warning("⚠️ Colonnes avec point-virgule détectées, correction...")
+                            df = pd.read_csv(self.csv_filename, sep=';', names=['Date', 'Opening_Price'], skiprows=1)
+                            logging.info("✅ CSV relu avec séparateur point-virgule")
+                        elif ',' in col_name and 'Date' in col_name and 'Opening_Price' in col_name:
+                            # Le CSV a des virgules dans les noms de colonnes
+                            logging.warning("⚠️ Colonnes avec virgule détectées, correction...")
                             df = pd.read_csv(self.csv_filename, sep=',', names=['Date', 'Opening_Price'], skiprows=1)
-                            logging.info("✅ CSV corrigé avec noms de colonnes explicites")
+                            logging.info("✅ CSV relu avec séparateur virgule")
                     
                     logging.info(f"📊 Colonnes finales: {list(df.columns)}")
+                    
+                    # Nettoyer les données si nécessaire
+                    if 'Opening_Price' in df.columns:
+                        # Remplacer les espaces par des points pour les décimales (112 4 -> 112.4)
+                        df['Opening_Price'] = df['Opening_Price'].astype(str).str.replace(' ', '.', regex=False)
+                        # Convertir en float
+                        df['Opening_Price'] = pd.to_numeric(df['Opening_Price'], errors='coerce')
+                        logging.info("✅ Prix nettoyés et convertis en nombres")
+                    
                     logging.info(f"📊 Premières lignes:\n{df.head()}")
                     
                     # Gérer les différents formats de date
