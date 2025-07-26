@@ -304,7 +304,7 @@ class SP500GitHubUpdater:
                 df = pd.concat([df, new_row], ignore_index=True)
                 logging.info(f"➕ Ligne ajoutée, nouveau total: {len(df)} lignes")
             
-            df = df.sort_values('Date').drop_duplicates(subset=['Date'], keep='last')
+            df = df.sort_values('Date', ascending=False).drop_duplicates(subset=['Date'], keep='last')
             
             logging.info(f"📊 DataFrame final - Shape: {df.shape}")
             logging.info(f"📊 Dernières lignes:\n{df.tail()}")
