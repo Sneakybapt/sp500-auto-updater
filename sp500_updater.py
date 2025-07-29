@@ -24,93 +24,71 @@ class SP500GitHubUpdater:
             if Path(self.csv_filename).exists():
                 logging.info(f"📁 Fichier {self.csv_filename} trouvé")
                 
-                # Essayer de lire avec différents formats
-                df = None
+                # Lire le fichier en mode texte pour diagnostiquer le format
+                with open(self.csv_filename, 'r', encoding='utf-8') as f:
+                    first_line = f.readline().strip()
+                    second_line = f.readline().strip()
                 
-                # Essai 1: Format standard (sep=',', decimal='.')
-                try:
-                    df = pd.read_csv(self.csv_filename, sep=',', decimal='.')
-                    logging.info("✅ CSV lu avec format standard (sep=',')")
-                except Exception as e:
-                    logging.info(f"⚠️ Échec lecture format standard: {e}")
+                logging.info(f"🔍 Première ligne: {first_line}")
+                logging.info(f"🔍 Deuxième ligne: {second_line}")
                 
-                # Essai 2: Format français (sep=';', decimal=',')
-                if df is None:
-                    try:
-                        df = pd.read_csv(self.csv_filename, sep=';', decimal=',')
-                        logging.info("✅ CSV lu avec format français (sep=';')")
-                    except Exception as e:
-                        logging.info(f"⚠️ Échec lecture format français: {e}")
+                # Déterminer le séparateur
+                separator = ';' if ';' in first_line else ','
+                logging.info(f"📊 Séparateur détecté: '{separator}'")
                 
-                if df is not None and not df.empty:
-                    logging.info(f"📊 Colonnes trouvées: {list(df.columns)}")
-                    
-                    # Vérifier si les colonnes sont correctes
-                    if len(df.columns) == 1:
-                        col_name = df.columns[0]
-                        if ';' in col_name and 'Date' in col_name and 'Opening_Price' in col_name:
-                            # Le CSV utilise des point-virgules dans les noms de colonnes
-                            logging.warning("⚠️ Colonnes avec point-virgule détectées, correction...")
-                            df = pd.read_csv(self.csv_filename, sep=';', names=['Date', 'Opening_Price'], skiprows=1)
-                            logging.info("✅ CSV relu avec séparateur point-virgule")
-                        elif ',' in col_name and 'Date' in col_name and 'Opening_Price' in col_name:
-                            # Le CSV a des virgules dans les noms de colonnes
-                            logging.warning("⚠️ Colonnes avec virgule détectées, correction...")
-                            df = pd.read_csv(self.csv_filename, sep=',', names=['Date', 'Opening_Price'], skiprows=1)
-                            logging.info("✅ CSV relu avec séparateur virgule")
-                    
-                    logging.info(f"📊 Colonnes finales: {list(df.columns)}")
-                    
-                    # Nettoyer les données si nécessaire
-                    if 'Opening_Price' in df.columns:
-                        # Remplacer les espaces par des points pour les décimales (112 4 -> 112.4)
-                        df['Opening_Price'] = df['Opening_Price'].astype(str).str.replace(' ', '.', regex=False)
-                        # Convertir en float
-                        df['Opening_Price'] = pd.to_numeric(df['Opening_Price'], errors='coerce')
-                        logging.info("✅ Prix nettoyés et convertis en nombres")
-                    
-                    logging.info(f"📊 Premières lignes:\n{df.head()}")
-                    
-                    # Gérer les différents formats de date
-                    if 'Date' in df.columns:
-                        # Essayer différents formats de date
-                        try:
-                            # Essayer format français d/m/Y
-                            df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y', errors='coerce').dt.date
-                            logging.info("✅ Dates converties format français (d/m/Y)")
-                        except:
-                            try:
-                                # Essayer format américain Y-m-d
-                                df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d', errors='coerce').dt.date
-                                logging.info("✅ Dates converties format américain (Y-m-d)")
-                            except:
-                                try:
-                                    # Essayer conversion automatique
-                                    df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
-                                    logging.info("✅ Dates converties format automatique")
-                                except Exception as date_error:
-                                    logging.error(f"❌ Erreur conversion dates: {date_error}")
-                    
-                    # Nettoyer les valeurs NaN
-                    df = df.dropna()
-                    
-                    # Vérifier la dernière date
-                    if not df.empty and 'Date' in df.columns:
-                        last_date = df['Date'].max()
-                        logging.info(f"📅 Dernière date dans le CSV: {last_date}")
-                    
-                    logging.info(f"📥 CSV existant chargé : {len(df)} lignes")
-                    return df
+                # Lire le CSV avec le bon séparateur
+                if separator == ';':
+                    df = pd.read_csv(self.csv_filename, sep=';', decimal=',')
                 else:
-                    logging.warning("⚠️ Fichier CSV vide ou non lisible")
+                    df = pd.read_csv(self.csv_filename, sep=',', decimal='.')
+                
+                logging.info(f"✅ CSV lu avec séparateur '{separator}'")
+                logging.info(f"📊 Colonnes trouvées: {list(df.columns)}")
+                logging.info(f"📊 Shape initial: {df.shape}")
+                
+                # Vérifier et nettoyer les colonnes
+                if 'Date' in df.columns and 'Opening_Price' in df.columns:
+                    logging.info("✅ Colonnes Date et Opening_Price trouvées")
+                    
+                    # Nettoyer les prix (gérer les virgules décimales françaises)
+                    if df['Opening_Price'].dtype == 'object':
+                        df['Opening_Price'] = df['Opening_Price'].astype(str).str.replace(',', '.', regex=False)
+                        df['Opening_Price'] = pd.to_numeric(df['Opening_Price'], errors='coerce')
+                        logging.info("✅ Prix convertis en nombres")
+                    
+                    # Convertir les dates
+                    df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce').dt.date
+                    logging.info("✅ Dates converties")
+                    
+                    # Supprimer les lignes avec des valeurs manquantes
+                    initial_len = len(df)
+                    df = df.dropna()
+                    if len(df) < initial_len:
+                        logging.info(f"🧹 {initial_len - len(df)} lignes avec valeurs manquantes supprimées")
+                    
+                    # Trier par date (plus récent en premier)
+                    df = df.sort_values('Date', ascending=False).drop_duplicates(subset=['Date'], keep='first')
+                    
+                    logging.info(f"📥 CSV historique chargé avec succès : {len(df)} lignes")
+                    
+                    if not df.empty:
+                        logging.info(f"📅 Date la plus récente: {df['Date'].iloc[0]}")
+                        logging.info(f"📅 Date la plus ancienne: {df['Date'].iloc[-1]}")
+                    
+                    return df
+                    
+                else:
+                    logging.error(f"❌ Colonnes manquantes. Trouvées: {list(df.columns)}")
+                    return pd.DataFrame(columns=['Date', 'Opening_Price'])
                     
             else:
                 logging.info("📄 Aucun CSV existant, création d'un nouveau")
-            
-            return pd.DataFrame(columns=['Date', 'Opening_Price'])
+                return pd.DataFrame(columns=['Date', 'Opening_Price'])
             
         except Exception as e:
             logging.error(f"❌ Erreur chargement CSV : {e}")
+            import traceback
+            logging.error(f"❌ Traceback: {traceback.format_exc()}")
             return pd.DataFrame(columns=['Date', 'Opening_Price'])
     
     def save_csv(self, df):
@@ -276,9 +254,11 @@ class SP500GitHubUpdater:
             
             # 3. Vérifier si on a déjà des données pour aujourd'hui
             if not df.empty and 'Date' in df.columns and today in df['Date'].values:
-                logging.info(f"📅 Données pour {today} déjà présentes - Arrêt")
-                # Mais on continue quand même pour forcer la mise à jour si nécessaire
-                # return True
+                logging.info(f"📅 Données pour {today} déjà présentes dans l'historique")
+                # Ne pas arrêter, mais forcer la mise à jour de la valeur du jour
+                logging.info("🔄 Mise à jour de la valeur existante...")
+            else:
+                logging.info(f"📅 Aucune donnée pour {today}, ajout d'une nouvelle ligne")
             
             # 4. Récupérer les dernières données disponibles
             logging.info("🔍 Récupération des dernières données...")
