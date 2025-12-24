@@ -1,4 +1,5 @@
 name: 📊 SP500 Daily Update
+
 on:
   schedule:
     # Exécution tous les jours à 15h30 UTC (10h30 EST - après ouverture des marchés US)
@@ -6,9 +7,14 @@ on:
   
   # Permet l'exécution manuelle depuis GitHub
   workflow_dispatch:
+
 jobs:
   update-sp500:
     runs-on: ubuntu-latest
+    
+    # INDISPENSABLE pour que l'étape "git push" fonctionne
+    permissions:
+      contents: write
     
     steps:
     - name: 📥 Checkout code
@@ -17,7 +23,8 @@ jobs:
     - name: 🐍 Setup Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
+        # CORRECTION : Passage de 3.9 à 3.10 pour supporter la syntaxe de yfinance
+        python-version: '3.10'
         
     - name: 📦 Install dependencies
       run: |
@@ -34,9 +41,10 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
+        # Ajout des fichiers (vérifie bien que ces fichiers sont générés par ton script)
         git add sp500_data.csv sp500_info.json
-        git diff --staged --quiet || git commit -m "📊 Update SP500 data - $(date)"
-        git push
+        # Le '|| echo' empêche le workflow de planter s'il n'y a rien à commiter
+        git diff --staged --quiet || (git commit -m "📊 Update SP500 data - $(date)" && git push)
         
     - name: 📝 Log completion
       run: |
